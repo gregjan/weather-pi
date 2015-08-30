@@ -1,0 +1,11 @@
+---
+# Installs PI weather station apps onto a functioning Raspberrian OS
+- hosts: webservers
+  remote_user: pi
+  sudo: yes
+  gather_facts: yes
+
+  roles:
+    - pi
+    - bmp180
+    - dht22
