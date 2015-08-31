@@ -1,6 +1,2 @@
 [webservers]
-192.168.1.200
-
-[webservers:vars]
-wifi_ssid=myssid
-wifi_password=mypassword
+192.168.1.200 wifiSSID=myssid wifiPassword=mypassword

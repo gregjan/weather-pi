@@ -6,6 +6,6 @@
   gather_facts: yes
 
   roles:
-    - pi
-    - bmp180
+#    - pi
+#    - bmp180
     - dht22
