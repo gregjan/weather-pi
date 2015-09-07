@@ -1,15 +1,17 @@
 ---
 - name: Install packages
+  sudo: yes
   apt: pkg={{ item }} state=installed update_cache=true
   with_items:
     - build-essential
     - python-dev
 
 - name: Download Adafruit library
-  get_url: url=https://github.com/adafruit/Adafruit_Python_DHT/archive/master.zip dest=/tmp
+  get_url: url=https://github.com/adafruit/Adafruit_Python_DHT/archive/master.zip dest=/tmp/master.zip
 
 - name: Unzip Adafruit library
-  unarchive: src=/tmp/master.zip dest=/home/pi copy=no owner=pi group=pi
+  unarchive: src=/tmp/master.zip dest=/home/pi/ copy=no owner=pi group=pi
 
 - name: Setup Adafruit library
-  shell: python setup.py install
+  sudo: yes
+  shell: cd /home/pi/Adafruit_Python_DHT-master; python setup.py install
