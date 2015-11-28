@@ -1,0 +1,7 @@
+---
+- apt: name=git
+- git: repo=https://github.com/adafruit/Adafruit_Python_BMP.git dest=/home/pi/bmp180
+  ignore_errors: yes
+- name: Setup BMP180 library
+  sudo: yes
+  shell: cd /home/pi/bmp180; python setup.py install

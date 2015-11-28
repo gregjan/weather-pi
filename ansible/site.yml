@@ -1,11 +1,13 @@
 ---
 # Installs PI weather station apps onto a functioning Raspberrian OS
-- hosts: webservers
-  remote_user: pi
+- hosts: weather-pi
   gather_facts: yes
+
+  post_tasks:
+    - copy: src=../scripts/sensor_logging.py dest=/home/pi/sensor_logging.py mode=0755
 
   roles:
 #    - pi
 #    - bmp180
 #    - dht22
-    - mcp3008
+#    - mcp3008

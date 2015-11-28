@@ -2,38 +2,89 @@
 # Based off the code written by Dan Mandle http://dan.mandle.me September 2012
 # Modified by Kevin Kingsbury: https://github.com/kmkingsbury
 # License: GPL 2.0
- 
-import os
-from daemon import Daemon
 
+import os
+import time
 import RPi.GPIO as GPIO
 
 from time import gmtime, strftime
 import threading
-import yaml
 import csv
-import rrdtool
+
+from math import log
 
 #Sesnsor libraries
-from bmp183 import bmp183
-#import Adafruit_DHT
+import Adafruit_DHT
+import Adafruit_BMP.BMP085 as BMP085
 
-
-#GPIO.setmode(GPIO.BCM) 
+GPIO.setmode(GPIO.BCM)
 sensor = 11
-DHpin = 7
-SPICLK = 11 #17
-SPIMISO = 18 #24
-SPIMOSI = 22 #25
-SPICS = 13 #27
-humidity_adc = 0
+DHTpin = 4
+
+BMP_i2c_busnum=1
+
+SPICLK = 18
+SPIMISO = 23
+SPIMOSI = 24
+SPICS = 25
+
 mybutton = 40
 mywindspeed = 38
 myraingauge = 37
 light_adc = 1
-winddir_adc = 2
+winddir_adc = 7
 
+def readDHTHumidityTemp():
+    sensor = Adafruit_DHT.DHT22
+    humidity = None
+    # Use the read_retry method which will retry up
+    # to 15 times to get a sensor reading (waiting 2 seconds between each retry).
+    while humidity is None:
+        humidity, temperature = Adafruit_DHT.read_retry(sensor, DHTpin)
+    return humidity, temperature
 
+def dewPoint(humidity, celsius):
+    a = 17.271
+    b = 237.7
+    temp = (a * celsius) / (b + celsius) + log(humidity*0.01)
+    Td = (b * temp) / (a - temp)
+    return Td
+
+def heatIndex(humidity, tempF):
+  c1, c2, c3, c4, c5, c6, c7, c8, c9 = -42.38, 2.049, 10.14, -0.2248, -6.838e-3, -5.482e-2, 1.228e-3, 8.528e-4, -1.99e-6
+  T = tempF
+  R = humidity
+
+  A = (( c5 * T) + c2) * T + c1
+  B = ((c7 * T) + c4) * T + c3
+  C = ((c9 * T) + c8) * T + c6
+
+  rv = (C * R + B) * R + A
+  return rv
+
+windref = {}
+windref[38]="West"
+windref[67]="NW"
+windref[100]="WNW"
+windref[131]="North"
+windref[182]="NNW"
+windref[238]="SW"
+windref[261]="WSW"
+windref[379]="NE"
+windref[433]="NNE"
+windref[554]="South"
+windref[611]="SSW"
+windref[697]="SE"
+windref[786]="SSE"
+windref[844]="East"
+windref[860]="ENE"
+windref[892]="ESE"
+
+def direction(number):
+    for i in windref.keys():
+        if i-8 < number < i+8 :
+            return windref[i]
+    return "Unknown"
 
 runner = True
 rain_count = 0
@@ -69,15 +120,15 @@ def readadc(adcnum, clockpin, mosipin, misopin, cspin):
                         adcout |= 0x1
 
         GPIO.output(cspin, True)
-        
+
         adcout >>= 1       # first bit is 'null' so drop it
         return adcout
 
-# handle the button event 
+# handle the button event
 def buttonEventHandler (pin):
     print "handling button event"
     os.system("shutdown -h now")
-    global runner 
+    global runner
     runner = False
 
 def windEventHandler (pin):
@@ -89,32 +140,14 @@ def rainEventHandler (pin):
     print "handling rain event"
     global rain_count
     rain_count += 1
- 
-# RRD 
-#from rrdtool import update as rrd_update
-#ret = rrd_update('example.rrd', 'N:%s:%s' %(metric1, metric2));
 
 # Main Loop
 if __name__ == '__main__':
-
-# Open Config file, use vars from that.
-  with open('config.yaml', 'r') as ymlfile:
-    cfg = yaml.load(ymlfile)
-  
-  for section in cfg:
-    print(section)
-
-
-# Logger open CSV
+  # Logger open CSV
   fp = open('test.csv', 'a')
   csv = csv.writer(fp, delimiter=',')
 
-
-  
-
-  #Get Pressure and Temp Ready
-  bmp = bmp183()
-
+  bmp180Sensor = BMP085.BMP085(busnum=BMP_i2c_busnum)
 
   # set up the SPI interface pins
   GPIO.setup(SPIMOSI, GPIO.OUT)
@@ -122,70 +155,51 @@ if __name__ == '__main__':
   GPIO.setup(SPICLK, GPIO.OUT)
   GPIO.setup(SPICS, GPIO.OUT)
 
-
   GPIO.setup(mybutton, GPIO.IN, pull_up_down=GPIO.PUD_UP)
   GPIO.setup(mywindspeed, GPIO.IN, pull_up_down=GPIO.PUD_UP)
   GPIO.setup(myraingauge, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-
-  
-  # tell the GPIO library to look out for an 
-  # event on pin x and deal with it by calling 
+  # tell the GPIO library to look out for an
+  # event on pin x and deal with it by calling
   # the buttonEventHandler function
   GPIO.add_event_detect(mybutton,GPIO.FALLING)
   GPIO.add_event_callback(mybutton,buttonEventHandler)
 
   GPIO.add_event_detect(mywindspeed,GPIO.FALLING)
   GPIO.add_event_callback(mywindspeed,windEventHandler)
-  
+
   GPIO.add_event_detect(myraingauge,GPIO.FALLING)
   GPIO.add_event_callback(myraingauge,rainEventHandler)
-  
- 
+
   try:
     while (runner == True):
-      #It may take a second or two to get good data
+      # It may take a second or two to get good data
 
-      #Pull Temp, Humidity, Pressure
-      bmp.measure_pressure()
-      print "Temperature: ", bmp.temperature, "deg C"
-      print "Pressure: ", bmp.pressure/100.0, " hPa"
+      # Pull BMP180 Temp, Humidity, Pressure
+      bmpaltitude = bmp180Sensor.read_altitude()
+      bmptempC = bmp180Sensor.read_temperature()
+      bmptempF = bmptempC * 9/5.0 + 32
+      bmppressure = bmp180Sensor.read_pressure()/100.0 #hPa
+      bmpsealevelpressure = bmp180Sensor.read_sealevel_pressure()/100.0
 
-      bmptemp = bmp.temperature * 9/5 + 32
-      bmppressure = bmp.pressure/100.0 #hPa
-
-      #Pull Humidity & Temp
-#      humidity, temperature = Adafruit_DHT.read_retry(Adafruit_DHT.DHT11, DHpin, 10, .01)
-#      if humidity is not None and temperature is not None:
-#        print 'Temp={0:0.1f}*C  Humidity={1:0.1f}%'.format(temperature, humidity)
-#      else:
-#         humidity = "Nan"
-#         temperature = "Nan"
-
-      value = readadc(humidity_adc, SPICLK, SPIMOSI, SPIMISO, SPICS)
-      supplyVolt = 5.09
-      voltage = value/1024. * supplyVolt #// convert to voltage value
-      sensorRH = 161.0 * voltage / supplyVolt - 25.8
-      trueRH = sensorRH / (1.0546 - 0.0026 *  bmp.temperature)
-
-
-      print "Val "+ str(value) + "Perc" + str(value/1023.) + " TH:"+str(trueRH)
+      # Pull DHT Humidity & Temp
+      dhthumidity, dhttempC = readDHTHumidityTemp()
+      dewpoint = dewPoint(dhthumidity, dhttempC)
+      dhttempF = dhttempC * 9/5.0 + 32
+      heatindex = heatIndex(dhthumidity, dhttempF)
 
       # GEt Light:
-      light = readadc(light_adc, SPICLK, SPIMOSI, SPIMISO, SPICS)
-      print "Light:"+ str(light) 
+      #light = readadc(light_adc, SPICLK, SPIMOSI, SPIMISO, SPICS)
 
-      #Rain: 
+      #Rain:
       #Right now this is just recording "hits", so this would be x events since last call.
       rain = rain_count
       rain_count = 0;
-      
 
       #Wind Dir:
       # These need to be mapped to a direction. Right now record raw, we'll convert later or in the graphs.
       winddir = readadc(winddir_adc, SPICLK, SPIMOSI, SPIMISO, SPICS)
-      print "Wind:"+ str(winddir)
-      
+      winddir = direction(winddir)
 
       #Wind Speed
       #interupt: 1 = 180deg, 2 int = 1 full rotation.
@@ -196,20 +210,19 @@ if __name__ == '__main__':
       #Record to CSV
       #todo provide current time as first element in data
       timenow = 0
-      data = [ timenow, bmptemp, trueRH, bmppressure, light, winddir, windspeed, rain ]
+      data = [ timenow, bmpaltitude, bmptempF, bmppressure, bmpsealevelpressure, dhthumidity, dewpoint, heatindex, winddir, windspeed, rain ]
       print "Data: ",
       print (data)
       csv.writerow(data)
-         
+
       #Sleep
-      time.sleep(1) #set to whatever
+      time.sleep(10) #set to whatever
 
   except (KeyboardInterrupt, SystemExit): #when you press ctrl+c
-    print "\nKilling Thread..."    
+    print "\nKilling Thread..."
     runner = False
   print "Almost done."
   fp.close()
   GPIO.cleanup()
   print "Done.\nExiting."
   exit();
-
