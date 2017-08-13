@@ -28,9 +28,8 @@ SPIMISO = 23
 SPIMOSI = 24
 SPICS = 25
 
-mybutton = 40
-mywindspeed = 38
-myraingauge = 37
+mywindspeed = 22 
+myraingauge = 27
 light_adc = 1
 winddir_adc = 7
 
@@ -155,16 +154,12 @@ if __name__ == '__main__':
   GPIO.setup(SPICLK, GPIO.OUT)
   GPIO.setup(SPICS, GPIO.OUT)
 
-  GPIO.setup(mybutton, GPIO.IN, pull_up_down=GPIO.PUD_UP)
   GPIO.setup(mywindspeed, GPIO.IN, pull_up_down=GPIO.PUD_UP)
   GPIO.setup(myraingauge, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
   # tell the GPIO library to look out for an
   # event on pin x and deal with it by calling
   # the buttonEventHandler function
-  GPIO.add_event_detect(mybutton,GPIO.FALLING)
-  GPIO.add_event_callback(mybutton,buttonEventHandler)
-
   GPIO.add_event_detect(mywindspeed,GPIO.FALLING)
   GPIO.add_event_callback(mywindspeed,windEventHandler)
 
